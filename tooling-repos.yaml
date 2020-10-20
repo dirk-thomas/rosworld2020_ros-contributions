@@ -1,0 +1,51 @@
+ros-infrastructure/bloom:
+  master:
+  - tools
+ros-infrastructure/buildfarm:
+  master:
+  - tools
+ros-infrastructure/buildfarm_deployment:
+  master:
+  - tools
+ros-infrastructure/catkin_pkg:
+  master:
+  - tools
+ros-infrastructure/catkin-sphinx:
+  master:
+  - tools
+ros-infrastructure/jenkins_scripts:
+  master:
+  - tools
+ros-infrastructure/jenkins_tools:
+  master:
+  - tools
+ros-infrastructure/prerelease_website:
+  master:
+  - tools
+ros-infrastructure/rep:
+  master:
+  - tools
+ros-infrastructure/ros_buildfarm:
+  master:
+  - tools
+ros-infrastructure/ros_release_python:
+  master:
+  - tools
+ros-infrastructure/rosbrowse:
+  master:
+  - tools
+ros-infrastructure/rosdep:
+  master:
+  - tools
+ros-infrastructure/rosdistro:
+  master:
+  - tools
+ros-infrastructure/rosinstall_generator:
+  master:
+  - tools
+ros-infrastructure/rospkg:
+  master:
+  - tools
+ros-infrastructure/roswiki:
+  master:
+  - tools
