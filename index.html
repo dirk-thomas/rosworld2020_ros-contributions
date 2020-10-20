@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+body {
+  margin: 0;
+}
+.background {
+  background-image: url('ros.png');
+  background-position-x: center;
+  background-position-y: center;
+  background-repeat: no-repeat;
+  position: absolute;
+  z-index: -1;
+}
+.title, .time, .repos, .commits, .authors, .github {
+  font-family: sans-serif;
+  font-weight: bold;
+  position: absolute;
+}
+.title, .time {
+  font-size: 3em;
+  text-align: center;
+}
+.title {
+  top: 0.5em;
+}
+.time {
+  bottom: 0.5em;
+}
+.repos, .commits, .authors {
+  font-size: 2em;
+  padding-left: 1em;
+}
+.repos {
+  bottom: 0.9em;
+}
+.commits {
+  bottom: 2.4em;
+}
+.authors {
+  bottom: 3.9em;
+}
+.github {
+  bottom: 2em;
+  padding-right: 1em;
+  text-align: right;
+}
+.repo text, .commit text {
+  display: none;
+  font-family: sans-serif;
+  font-size: 0.8em;
+  font-weight: bold;
+  position: absolute;
+  left: center;
+  top: center;
+  text-shadow:
+    0.10em 0 white,
+    0 0.10em white,
+    -0.10em 0 white,
+    0 -0.10em white,
+    -0.10em -0.10em white,
+    -0.10em 0.10em white,
+    0.10em -0.10em white,
+    0.10em 0.10em white;
+}
+.repo:hover text, .commit:hover text {
+  display: inline;
+}
+
+</style>
+<body>
+<script src="d3.v3.min.js"></script>
+<script>
+
+var startWait = 3.0;
+
+var padding = 1.5;  // minimum distance between repository circles
+var maxRadius = 20;  // maximum radius for repository circles
+var walltimeFactor = 20;
+var rosLogoMinSize = 3;
+var rosLogoMaxSize = 6;
+
+var paused = false;
+var repositories = [];
+var commits = [];
+var sum_commits = 0;
+var authors = new Set();
+
+var width = window.innerWidth - 16 * 2;
+var height = window.innerHeight - 9 * 2;
+console.log(width + ' x ' + height);
+
+var fill = d3.scale.category10();
+
+// ROS logo
+d3.select("body").append("div")
+  .attr("class", "background")
+  .style("width", width + "px")
+  .style("height", height + "px")
+  .style("background-size", rosLogoMinSize + "em");
+
+var svg = d3.select("body").append("svg")
+  .attr("width", width)
+  .attr("height", height)
+  // pause / resume simulation
+  .on('click', function(d,i){
+    paused = !paused;
+    if (paused) {
+      force.alpha(0.0);
+    } else {
+      scheduleNextEvent();
+    }
+  });
+
+// title
+d3.select("body").append("div")
+  .attr("class", "title")
+  .style("width", width + "px")
+  .text("ROS Contributions");
+// current timestamp
+var current_time = d3.select("body").append("div")
+  .attr("class", "time")
+  .style("width", width + "px");
+// repository count
+var repository_count = d3.select("body").append("div")
+  .attr("class", "repos")
+  .style("width", width + "px");
+// commit count
+var commit_count = d3.select("body").append("div")
+  .attr("class", "commits")
+  .style("width", width + "px");
+// author count
+var author_count = d3.select("body").append("div")
+  .attr("class", "authors")
+  .style("width", width + "px");
+// link to GitHub repository
+d3.select("body").append("div")
+  .attr("class", "github")
+  .style("width", width + "px")
+  .text("https://github.com/dirk-thomas/rosworld2020_ros-contributions");
+
+var force = d3.layout.force()
+  .nodes(repositories)
+  .charge(0)
+  .gravity(0)
+  .size([width, height])
+  .on("tick", tick);
+
+var repo_selection = svg.selectAll(".repo");
+var commit_selection = svg.selectAll(".commit");
+
+function tick(e) {
+  var k = .005 * e.alpha;
+
+  // calculate movement of repositories towards their target position
+  repositories.forEach(function(o, i) {
+    o.x += (o.target_x - o.x) * k * Math.pow(o.radius, 1.5);
+    o.y += (o.target_y - o.y) * k * Math.pow(o.radius, 1.5);
+  });
+
+  // resolve collisions between repositories
+  repo_selection.each(collide(.5));
+
+  svg.selectAll(".repo text")
+    .text(function(d) { return d.id + ' [' + d.commits + ']'; });
+
+  // remove commits which have reached their repository
+  for (var i = commits.length; i--;) {
+    var commit = commits[i];
+    diff_x = commit.repo.x - commit.x;
+    diff_y = commit.repo.y - commit.y;
+    if (Math.sqrt(diff_x * diff_x + diff_y + diff_y) < Math.max(commit.repo.radius, 10)) {
+      // increase the commit count of the repository
+      commit.repo.commits += commit.combined_commits;
+      commit.repo.radius = commitsToRadius(commit.repo.commits);
+      commits.splice(i, 1);
+    }
+  }
+  commit_selection = svg.selectAll(".commit").data(commits, function(d) {
+    return d.id;
+  });
+  commit_selection.exit().remove();
+
+  // calculate movement of commits towards their repository
+  commits.forEach(function(o, i) {
+    var max_step = 5.0;
+    var diff_x = o.repo.x - o.x;
+    var diff_y = o.repo.y - o.y;
+    var delta_x = Math.abs(diff_x);
+    var delta_y = Math.abs(diff_y);
+    var fraction = 1.0;
+    if (delta_x > delta_y) {
+      if (delta_x > max_step) {
+        fraction = delta_x / max_step;
+      }
+    } else {
+      if (delta_y > max_step) {
+        fraction = delta_y / max_step;
+      }
+    }
+    o.x += diff_x / fraction;
+    o.y += diff_y / fraction;
+  });
+
+  // update repo position and circle radius
+  repo_selection
+    .attr("transform", function(d) {
+      return "translate(" + d.x + "," + d.y + ")";
+    })
+    .select("circle")
+    .attr("r", function(d) { return d.radius; })
+
+  // update commit position
+  commit_selection
+    .attr("transform", function(d) {
+      return "translate(" + d.x + "," + d.y + ")";
+    })
+}
+
+var next_event_id = 0;
+var last_timestamp = 0;
+var events = [];
+
+// read events from file and schedule first event
+d3.json("data.json", function(error, data) {
+  if (error) throw error;
+  events = data.events;
+
+  // pulsate ROS logo
+  setTimeout(function() {
+    var bg_selection = d3.selectAll(".background");
+    (function repeat() {
+      bg_selection = bg_selection.transition()
+        .duration(700)
+        .styleTween("background-size", function() {
+          return function(t) {
+            t = 1 - Math.sqrt(1 - t * t);  // circleIn
+            return ((rosLogoMaxSize - rosLogoMinSize) * t + rosLogoMinSize) + "em";
+          };
+        })
+        .transition()
+        .duration(700)
+        .styleTween("background-size", function() {
+          return function(t) {
+            t = Math.sqrt(1 - --t * t);  // circleOut
+            return ((rosLogoMinSize - rosLogoMaxSize) * t + rosLogoMaxSize) + "em";
+          };
+        })
+        .each("end", repeat);
+    })();
+  }, startWait * 1000);
+
+  setTimeout(function() {
+    updateTime(events[0].timestamp)
+    scheduleNextEvent();
+  }, (startWait + 3.3) * 1000);
+});
+
+// update time label based on seconds since epoch
+function updateTime(timestamp) {
+  var date = new Date(timestamp * 1000)
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  current_time.html(monthNames[date.getMonth()] + " " + date.getFullYear().toString());
+}
+
+function scheduleNextEvent() {
+  if (paused) return;
+  if (next_event_id >= events.length) return;
+  if (next_event_id == 0) {
+    last_timestamp = events[0].timestamp;
+  }
+  var event = events[next_event_id++];
+
+  if (event.timestamp < last_timestamp) {
+    console.error("Timestamps of events must increase weakly monotone");
+    return;
+  }
+
+  var event_delta = event.timestamp - last_timestamp;
+  // console.log('scheduleNextEvent', next_event_id, 'with event delta', event_delta, 's');
+  var events_duration = events[events.length - 1].timestamp - events[0].timestamp;
+  var timeout = walltimeFactor * event_delta / events_duration;
+  // console.log('scheduleNextEvent', next_event_id, 'with a timeout of', timeout, 's');
+
+  force.alpha(.1);  // make sure the sim is continuing while new events are coming
+
+  if (timeout < 0.001) {
+    handleEvent(event);
+  } else {
+    setTimeout(function() {
+      handleEvent(event);
+    }, timeout * 1000);
+  }
+}
+
+function handleEvent(event) {
+  // console.log('handleEvent', next_event_id - 1, event);
+  updateTime(event.timestamp);
+
+  if (event.type == "repo") {
+    addRepository(event.name, event.angle);
+  }
+  else if (event.type == "commit") {
+    addCommit(event.timestamp, event.author, event.avatar, event.repo, parseInt(event.combined_commits));
+  }
+
+  last_timestamp = event.timestamp;
+  scheduleNextEvent();
+}
+
+function addRepository(name, angle) {
+  // console.log('addRepository', name);
+  var target_x = width / 2 + (Math.sin(angle) * width / 5.0);
+  var target_y = height / 2 - (Math.cos(angle) * height / 5.0);
+
+  repo = {
+    angle: angle,
+    commits: 0,
+    id: name,
+    owner: name.split('/')[0],
+    radius: commitsToRadius(0),
+    target_x: target_x,
+    target_y: target_y,
+    x: width / 2 + (Math.sin(angle) * width / 25.0) + (Math.random() - 0.5) * width / 20.0,
+    y: height / 2 - (Math.cos(angle) * height / 25.0) + (Math.random() - 0.5) * height / 20.0
+  };
+  repositories.push(repo);
+  repository_count.text(repositories.length.toLocaleString() + " GitHub repositories");
+  force.start();
+
+  repo_selection = repo_selection.data(repositories);
+
+  var node = repo_selection.enter().append("g")
+    .attr("class", "repo")
+    .style("opacity", 0);
+
+  node.transition()
+    .duration(1000)
+    .style("opacity", 1);
+
+  var circle = node.append("circle")
+    .attr("r", function(d) { return d.radius; })
+    .style("fill", function(d) { return fill(d.owner); })
+    .style("stroke", function(d) { return d3.rgb(fill(d.owner)).darker(2); });
+
+  var label = node.append("text")
+    .attr("dy", ".35em")
+    .text(function(d) { return name; })
+    .attr("x", 8)
+    .attr("y", 0);
+}
+
+function commitsToRadius(commits) {
+  radius = 3;
+  if (commits > 0) {
+    radius += Math.max(0, Math.pow(commits / 10, 1 / 3) * 2);
+  }
+  return Math.min(radius, maxRadius);
+}
+
+function addCommit(timestamp, author, avatar, repo, combined_commits) {
+  // console.log('addCommit', author, repo, timestamp, combined_commits);
+  found_repo = repositories.find(element => element.id == repo);
+  if (!found_repo) {
+    console.log('addCommit', repo, 'could not find referenced repo');
+    return;
+  }
+  commit = {
+    author: author,
+    combined_commits: combined_commits,
+    id: timestamp + author + repo,
+    repo: found_repo,
+    x: width / 2 + (Math.sin(found_repo.angle) * width / 2.1) + (Math.random() - 0.5) * width / 10.0,
+    y: height / 2 - (Math.cos(found_repo.angle) * height / 2.2) + (Math.random() - 0.5) * height / 10.0
+  };
+  commits.push(commit);
+  sum_commits += combined_commits;
+  commit_count.text(sum_commits.toLocaleString() + " commits");
+  if (!authors.has(author)) {
+    authors.add(author);
+    author_count.text(authors.size.toLocaleString() + " authors");
+  }
+
+  commit_selection = commit_selection.data(commits);
+
+  var node = commit_selection.enter().append("g")
+    .attr("class", "commit")
+    .style("opacity", 0);
+
+  node.transition()
+    .duration(1000)
+    .style("opacity", 1);
+
+  if (!avatar) {
+    avatar = "https://github.com/favicon.ico";
+  }
+  var size = 14;
+  size += Math.min(Math.log10(combined_commits) * 7, 14);
+  var image = node.append("image")
+    .attr("xlink:href", avatar)
+    .attr("x", -size / 2)
+    .attr("y", -size / 2)
+    .attr("width", size)
+    .attr("height", size);
+
+  var label = node.append("text")
+    .attr("dy", ".35em")
+    .text(function(d) { return d.author + ' [' + d.combined_commits + '] -> ' + d.repo.id; })
+    .attr("x", 8)
+    .attr("y", 0);
+}
+
+// resolve collisions between repository circles
+function collide(alpha) {
+  var quadtree = d3.geom.quadtree(repositories);
+  return function(d) {
+    var r = d.radius + maxRadius + padding,
+      nx1 = d.x - r,
+      nx2 = d.x + r,
+      ny1 = d.y - r,
+      ny2 = d.y + r;
+    quadtree.visit(function(quad, x1, y1, x2, y2) {
+      if (quad.point && (quad.point !== d)) {
+        var x = d.x - quad.point.x,
+            y = d.y - quad.point.y,
+            l = Math.sqrt(x * x + y * y),
+            r = d.radius + quad.point.radius + padding;
+        if (l < r) {
+          l = (l - r) / l * alpha;
+          d.x -= x *= l;
+          d.y -= y *= l;
+          quad.point.x += x;
+          quad.point.y += y;
+        }
+      }
+      return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
+    });
+  };
+}
+
+</script>
