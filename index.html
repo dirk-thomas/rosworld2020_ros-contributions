@@ -46,14 +46,9 @@ body {
   padding-right: 1em;
   text-align: right;
 }
-.repo text, .commit text {
-  display: none;
+.org text, .repo text, .commit text {
   font-family: sans-serif;
-  font-size: 0.8em;
   font-weight: bold;
-  position: absolute;
-  left: center;
-  top: center;
   text-shadow:
     0.10em 0 white,
     0 0.10em white,
@@ -63,6 +58,13 @@ body {
     -0.10em 0.10em white,
     0.10em -0.10em white,
     0.10em 0.10em white;
+}
+.repo text, .commit text {
+  display: none;
+  font-size: 0.8em;
+  position: absolute;
+  left: center;
+  top: center;
 }
 .repo:hover text, .commit:hover text {
   display: inline;
@@ -269,7 +271,10 @@ function updateTime(timestamp) {
 
 function scheduleNextEvent() {
   if (paused) return;
-  if (next_event_id >= events.length) return;
+  if (next_event_id >= events.length) {
+    afterEvents();
+    return;
+  }
   if (next_event_id == 0) {
     last_timestamp = events[0].timestamp;
   }
@@ -301,7 +306,10 @@ function handleEvent(event) {
   // console.log('handleEvent', next_event_id - 1, event);
   updateTime(event.timestamp);
 
-  if (event.type == "repo") {
+  if (event.type == "org") {
+    addOrg(event.name, event.angle, event.commits);
+  }
+  else if (event.type == "repo") {
     addRepository(event.name, event.angle);
   }
   else if (event.type == "commit") {
@@ -310,6 +318,35 @@ function handleEvent(event) {
 
   last_timestamp = event.timestamp;
   scheduleNextEvent();
+}
+
+function addOrg(name, angle, commits) {
+  // console.log('addOrg', name, angle);
+  if (commits < 1000) return;
+
+  var x = width / 2 + (Math.sin(angle) * width / 3);
+  var y = height / 2 - (Math.cos(angle) * height / 3);
+  var org = svg.append("g")
+    .attr("class", "org")
+    .attr("transform", "translate(" + x + "," + y + ")")
+    .style("opacity", 0);
+
+  var dx = 4 * (1 - Math.abs(Math.cos(angle)));
+  if (angle > Math.PI) dx = -dx;
+
+  var rotate = angle * 180 / Math.PI % 360;
+  if (rotate < 180) {
+    rotate -= 90;
+  } else {
+    rotate += 90;
+  }
+  var label = org.append("text")
+    .attr("dx", dx + "em")
+    .attr("dominant-baseline", "central")
+    .attr("text-anchor", "middle")
+    .text(function(d) { return name + "/* [" + commits + "]"; })
+    .attr("transform", "rotate(" + rotate + ")");
+
 }
 
 function addRepository(name, angle) {
@@ -412,6 +449,15 @@ function addCommit(timestamp, author, avatar, repo, combined_commits) {
     .text(function(d) { return d.author + ' [' + d.combined_commits + '] -> ' + d.repo.id; })
     .attr("x", 8)
     .attr("y", 0);
+}
+
+function afterEvents() {
+  // console.log('afterEvents');
+
+  svg.selectAll(".org").transition()
+    .delay(5000)
+    .duration(3000)
+    .style("opacity", 1);
 }
 
 // resolve collisions between repository circles
