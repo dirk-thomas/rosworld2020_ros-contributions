@@ -14,6 +14,7 @@ import math
 import os
 import sys
 from collections import defaultdict
+from collections import OrderedDict
 
 import yaml
 
@@ -60,7 +61,7 @@ for url, versions in repos.items():
 
     repo_commits.sort(key=lambda e: e['authoredDate'])
 
-    # only generate a single event for mutliple commits from the same author
+    # only generate a single event for multiple commits from the same author
     # within a period to reduce the event count
     repo_event_added = False
     last_events_by_author = {}
@@ -135,6 +136,29 @@ for org, commit_count in sorted(commits_by_org.items(), key=lambda item: -item[1
 
 print('Sorting', len(events), 'events')
 events.sort(key=lambda e: e['timestamp'])
+
+# generate one event per org
+org_events = OrderedDict()
+for i, event in enumerate(events):
+    if event['type'] != 'repo':
+        continue
+    owner_name = event['name'].split('/', 1)[0]
+    if owner_name in org_events:
+        continue
+    org_event = {
+        'timestamp': event['timestamp'],
+        'type': 'org',
+        'name': owner_name,
+        'angle': event['angle'],
+        'commits': commits_by_org[owner_name],
+    }
+    org_events[owner_name] = (i, org_event)
+
+# inject org events before the first repo in that org
+offset = 0
+for i, event in org_events.values():
+    events[i + offset:i + offset] = [event]
+    offset += 1
 
 commit_count = 0
 event_count = 0
