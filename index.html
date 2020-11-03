@@ -46,7 +46,7 @@ body {
   padding-right: 1em;
   text-align: right;
 }
-.org text, .repo text, .commit text {
+.org text, .repo text, .commit text, .author text {
   font-family: sans-serif;
   font-weight: bold;
   text-shadow:
@@ -59,14 +59,14 @@ body {
     0.10em -0.10em white,
     0.10em 0.10em white;
 }
-.repo text, .commit text {
+.repo text, .commit text, .author text {
   display: none;
   font-size: 0.8em;
   position: absolute;
   left: center;
   top: center;
 }
-.repo:hover text, .commit:hover text {
+.repo:hover text, .commit:hover text, .author:hover text {
   display: inline;
 }
 
@@ -79,7 +79,7 @@ var startWait = 3.0;
 
 var padding = 1.5;  // minimum distance between repository circles
 var maxRadius = 20;  // maximum radius for repository circles
-var walltimeFactor = 20;
+var walltimeFactor = 15;
 var rosLogoMinSize = 3;
 var rosLogoMaxSize = 6;
 
@@ -87,7 +87,7 @@ var paused = false;
 var repositories = [];
 var commits = [];
 var sum_commits = 0;
-var authors = new Set();
+var authors = [];
 
 var width = window.innerWidth - 16 * 2;
 var height = window.innerHeight - 9 * 2;
@@ -151,6 +151,7 @@ var force = d3.layout.force()
 
 var repo_selection = svg.selectAll(".repo");
 var commit_selection = svg.selectAll(".commit");
+var author_selection = svg.selectAll(".author");
 
 function tick(e) {
   var k = .005 * e.alpha;
@@ -218,6 +219,26 @@ function tick(e) {
     .attr("transform", function(d) {
       return "translate(" + d.x + "," + d.y + ")";
     })
+
+  // update author position and visibility
+  author_selection
+    .attr("transform", function(d) {
+      if (d.position < 37) {
+        return "translate(" + (width - 20) + "," + (90 + 20 * d.position) + ")";
+      } else {
+        return "translate(0, 0)";
+      }
+    })
+    .style("display", function(d) { return d.position < 37 ? "inline" : "none"; })
+    .select("text")
+    .text(function(d) {
+      if (d.position < 37) {
+        return d.id + " [" + d.commits + "]";
+      } else {
+        return "not visible";
+      }
+    });
+
 }
 
 var next_event_id = 0;
@@ -417,9 +438,59 @@ function addCommit(timestamp, author, avatar, repo, combined_commits) {
   commits.push(commit);
   sum_commits += combined_commits;
   commit_count.text(sum_commits.toLocaleString() + " commits");
-  if (!authors.has(author)) {
-    authors.add(author);
-    author_count.text(authors.size.toLocaleString() + " authors");
+
+  if (author != "Unknown") {
+    var index = authors.findIndex(element => element.id == author);
+    if (index == -1) {
+      author_data = {
+        avatar: avatar,
+        commits: combined_commits,
+        id: author,
+        position: authors.length
+      };
+      authors.push(author_data);
+      from = authors.length - 1;
+      author_count.text(authors.length.toLocaleString() + " authors");
+    } else {
+      authors[index].commits += combined_commits;
+      from = index;
+    }
+    // move author with increased commits to a lower array index
+    // to maintain decreasing order
+    var to = from;
+    while (to > 0) {
+      if (authors[to - 1].commits >= authors[from].commits) {
+        break;
+      }
+      to -= 1;
+      authors[to].position += 1;
+    }
+    if (to < from) {
+      // console.log(authors[from].id, 'from', from, 'to', to);
+      authors[from].position = to;
+      authors.splice(to, 0, authors.splice(from, 1)[0]);
+    }
+
+    author_selection = author_selection.data(authors, function(d) {
+      return d.id;
+    });
+
+    var node = author_selection.enter().append("g")
+      .attr("class", "author");
+
+    var image = node.append("image")
+      .attr("xlink:href", avatar)
+      .attr("x", -7)
+      .attr("y", -7)
+      .attr("width", 14)
+      .attr("height", 14);
+
+    var label = node.append("text")
+      .attr("dy", ".35em")
+      .attr("text-anchor", "end")
+      .text(function(d) { return d.id + ' [' + d.commits + ']'; })
+      .attr("x", -15)
+      .attr("y", 0);
   }
 
   commit_selection = commit_selection.data(commits);
@@ -455,6 +526,14 @@ function afterEvents() {
   // console.log('afterEvents');
 
   svg.selectAll(".org").transition()
+    .delay(5000)
+    .duration(3000)
+    .style("opacity", 1);
+
+  svg.selectAll(".author text")
+    .style("display", "inline")
+    .style("opacity", 0)
+    .transition()
     .delay(5000)
     .duration(3000)
     .style("opacity", 1);
