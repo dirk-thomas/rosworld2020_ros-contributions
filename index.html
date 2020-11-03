@@ -79,7 +79,7 @@ var startWait = 3.0;
 
 var padding = 1.5;  // minimum distance between repository circles
 var maxRadius = 20;  // maximum radius for repository circles
-var walltimeFactor = 15;
+var walltimeFactor = 120;
 var rosLogoMinSize = 3;
 var rosLogoMaxSize = 6;
 var maxBatch = 20;
@@ -312,7 +312,9 @@ function scheduleNextEvent() {
   var event_delta = event.timestamp - last_timestamp;
   // console.log('scheduleNextEvent', next_event_id, 'with event delta', event_delta, 's');
   var events_duration = events[events.length - 1].timestamp - events[0].timestamp;
-  var timeout = walltimeFactor * event_delta / events_duration;
+  var events_progress = (event.timestamp - events[0].timestamp) / events_duration;
+  var factor = Math.max(1.0, Math.pow(1.0 - events_progress, 3) * walltimeFactor);
+  var timeout = factor * event_delta / events_duration;
   // console.log('scheduleNextEvent', next_event_id, 'with a timeout of', timeout, 's');
 
   force.alpha(.1);  // make sure the sim is continuing while new events are coming
